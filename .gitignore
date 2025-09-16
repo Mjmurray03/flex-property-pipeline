@@ -1,5 +1,7 @@
-# Large data files
-data/raw/pbcpao_official/*.TXT
+# Large files and directories
+venv/
+data/raw/
 *.TXT
 *.log
 __pycache__/
+.env
