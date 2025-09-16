@@ -1,0 +1,22 @@
+{
+  "stats": {
+    "start_time": "2025-09-12 20:58:27.053858",
+    "parcels_processed": 5434,
+    "flex_candidates_found": 0,
+    "errors": []
+  },
+  "results": {
+    "phase1": {
+      "parcels_extracted": 5434,
+      "storage_used_mb": 11.37,
+      "errors": []
+    }
+  },
+  "storage": {
+    "data_size_mb": 10.95,
+    "index_size_mb": 0.42,
+    "total_size_mb": 11.37,
+    "available_mb": 488.63,
+    "usage_percent": 2.27
+  }
+}

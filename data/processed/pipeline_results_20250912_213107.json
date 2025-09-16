@@ -1,0 +1,25 @@
+{
+  "stats": {
+    "start_time": "2025-09-12 21:31:00.378398",
+    "parcels_processed": 0,
+    "flex_candidates_found": 0,
+    "errors": []
+  },
+  "results": {
+    "phase2": {
+      "parcels_enriched": 0,
+      "details_found": 50,
+      "flex_candidates": 0,
+      "errors": [
+        "'<=' not supported between instances of 'NoneType' and 'int'"
+      ]
+    }
+  },
+  "storage": {
+    "data_size_mb": 10.95,
+    "index_size_mb": 1.02,
+    "total_size_mb": 11.97,
+    "available_mb": 488.03,
+    "usage_percent": 2.39
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "stats": {
+    "start_time": "2025-09-12 21:35:57.005362",
+    "parcels_processed": 0,
+    "flex_candidates_found": 0,
+    "errors": []
+  },
+  "results": {
+    "phase2": {
+      "parcels_enriched": 0,
+      "details_found": 50,
+      "flex_candidates": 0,
+      "errors": [
+        "'NoneType' object has no attribute 'upper'"
+      ]
+    }
+  },
+  "storage": {
+    "data_size_mb": 10.95,
+    "index_size_mb": 1.1,
+    "total_size_mb": 12.05,
+    "available_mb": 487.95,
+    "usage_percent": 2.41
+  }
+}

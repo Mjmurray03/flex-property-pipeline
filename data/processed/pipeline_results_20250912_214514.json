@@ -1,0 +1,27 @@
+{
+  "stats": {
+    "start_time": "2025-09-12 21:45:06.728166",
+    "parcels_processed": 0,
+    "flex_candidates_found": 0,
+    "errors": []
+  },
+  "results": {
+    "phase2": {
+      "parcels_enriched": 0,
+      "details_found": 50,
+      "flex_candidates": 0,
+      "successful_parcels": 99,
+      "failed_parcels": 1,
+      "errors": [
+        "Parcel 00424434440030010: Traceback (most recent call last):\n  File \"C:\\flex-property-pipeline\\main.py\", line 243, in phase2_enrichment\n    score_result = self.scorer.calculate_flex_score(enriched)\n  File \"C:\\flex-property-pipeline\\processors\\flex_scorer.py\", line 68, in calculate_flex_score\n    indicators['location_score'] = self._score_location(property_data)\n                                   ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^\n  File \"C:\\flex-property-pipeline\\processors\\flex_scorer.py\", line 223, in _score_location\n    municipality = property_data.get('municipality', '').upper()\n                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAttributeError: 'NoneType' object has no attribute 'upper'\n"
+      ]
+    }
+  },
+  "storage": {
+    "data_size_mb": 11.45,
+    "index_size_mb": 1.19,
+    "total_size_mb": 12.64,
+    "available_mb": 487.36,
+    "usage_percent": 2.53
+  }
+}
