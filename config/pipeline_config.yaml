@@ -1,0 +1,35 @@
+# Scalable Flex Pipeline Configuration
+# This file contains all configuration settings for the multi-file processing pipeline
+
+# Input and Output Settings
+input_folder: "data/raw"
+output_file: "data/exports/all_flex_properties.xlsx"
+
+# Processing Settings
+batch_size: 10
+max_workers: 4
+enable_deduplication: true
+min_flex_score: 4.0
+
+# Progress and Logging
+progress_reporting: true
+log_level: "INFO"
+log_file: null  # Will use default log file naming
+
+# File Discovery Settings
+file_pattern: "*.xlsx"
+recursive_scan: false
+
+# Performance Settings
+memory_limit_gb: 4.0
+timeout_minutes: 30
+
+# Output Options
+enable_csv_export: true
+backup_existing: true
+
+# Deduplication Settings
+duplicate_fields:
+  - "Address"
+  - "City" 
+  - "State"

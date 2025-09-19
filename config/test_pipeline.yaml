@@ -1,0 +1,19 @@
+backup_existing: true
+batch_size: 10
+duplicate_fields:
+- Address
+- City
+- State
+enable_csv_export: true
+enable_deduplication: true
+file_pattern: '*.xlsx'
+input_folder: data/raw
+log_file: null
+log_level: INFO
+max_workers: 4
+memory_limit_gb: 4.0
+min_flex_score: 4.0
+output_file: data/exports/all_flex_properties.xlsx
+progress_reporting: true
+recursive_scan: false
+timeout_minutes: 30
