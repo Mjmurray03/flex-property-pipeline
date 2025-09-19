@@ -4,10 +4,15 @@ Data loading and preprocessing utilities for Flex Property Classifier
 
 import logging
 from pathlib import Path
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Tuple
 import pandas as pd
 
 from utils.logger import setup_logging
+from utils.data_type_utils import (
+    detect_categorical_numeric_columns,
+    convert_categorical_to_numeric,
+    safe_numeric_conversion
+)
 
 
 def load_property_data(file_path: str, logger: Optional[logging.Logger] = None) -> pd.DataFrame:
@@ -79,6 +84,243 @@ def load_property_data(file_path: str, logger: Optional[logging.Logger] = None) 
     except Exception as e:
         logger.error(f"Unexpected error loading file: {file_path} - {str(e)}")
         raise Exception(f"Failed to load Excel file: {str(e)}") from e
+
+
+def load_property_data_with_conversion(file_path: str, auto_convert_categorical: bool = True,
+                                     logger: Optional[logging.Logger] = None) -> Tuple[pd.DataFrame, Dict[str, Any]]:
+    """
+    Enhanced property data loading with automatic categorical data type conversion.
+    
+    Args:
+        file_path: Path to Excel file
+        auto_convert_categorical: Whether to automatically convert categorical columns to numeric
+        logger: Optional logger instance
+        
+    Returns:
+        Tuple of (DataFrame, conversion_report)
+        
+    Raises:
+        FileNotFoundError: If file doesn't exist
+        ValueError: If file format is invalid
+        Exception: For other loading errors
+    """
+    if logger is None:
+        logger = setup_logging('enhanced_data_loader')
+    
+    # Load the basic data first
+    logger.info(f"Loading property data with enhanced categorical conversion from: {file_path}")
+    df = load_property_data(file_path, logger)
+    
+    # Initialize conversion report
+    conversion_report = {
+        'file_path': file_path,
+        'original_shape': df.shape,
+        'categorical_columns_detected': 0,
+        'categorical_columns_converted': 0,
+        'conversion_successful': True,
+        'column_reports': {},
+        'data_quality_summary': {},
+        'warnings': [],
+        'errors': []
+    }
+    
+    try:
+        if auto_convert_categorical:
+            logger.info("Starting automatic categorical data type conversion...")
+            
+            # Detect categorical columns that should be numeric
+            categorical_analysis = detect_categorical_numeric_columns(df, logger)
+            conversion_report['categorical_columns_detected'] = len(categorical_analysis)
+            
+            if categorical_analysis:
+                logger.info(f"Found {len(categorical_analysis)} categorical columns suitable for conversion")
+                
+                # Convert categorical columns to numeric
+                converted_df, column_reports = convert_categorical_to_numeric(df, logger=logger)
+                
+                # Update conversion report
+                conversion_report['categorical_columns_converted'] = len(column_reports)
+                conversion_report['column_reports'] = column_reports
+                
+                # Check for any conversion failures
+                failed_conversions = [col for col, report in column_reports.items() 
+                                    if not report['conversion_successful']]
+                
+                if failed_conversions:
+                    warning_msg = f"Some categorical conversions failed: {failed_conversions}"
+                    conversion_report['warnings'].append(warning_msg)
+                    logger.warning(warning_msg)
+                
+                # Update DataFrame
+                df = converted_df
+                
+                logger.info(f"Categorical conversion complete: {len(column_reports)} columns processed")
+            else:
+                logger.info("No categorical columns requiring conversion found")
+        
+        # Generate data quality summary
+        conversion_report['data_quality_summary'] = _generate_data_quality_summary(df, logger)
+        conversion_report['final_shape'] = df.shape
+        
+        logger.info(f"Enhanced data loading complete: {df.shape[0]:,} rows, {df.shape[1]} columns")
+        
+        return df, conversion_report
+        
+    except Exception as e:
+        error_msg = f"Error during enhanced data loading: {str(e)}"
+        conversion_report['errors'].append(error_msg)
+        conversion_report['conversion_successful'] = False
+        logger.error(error_msg)
+        
+        # Return original DataFrame with error report
+        return df, conversion_report
+
+
+def _generate_data_quality_summary(df: pd.DataFrame, logger: logging.Logger) -> Dict[str, Any]:
+    """
+    Generate a comprehensive data quality summary for the loaded DataFrame.
+    
+    Args:
+        df: DataFrame to analyze
+        logger: Logger instance
+        
+    Returns:
+        Data quality summary dictionary
+    """
+    try:
+        logger.debug("Generating data quality summary...")
+        
+        summary = {
+            'total_rows': len(df),
+            'total_columns': len(df.columns),
+            'numeric_columns': 0,
+            'categorical_columns': 0,
+            'text_columns': 0,
+            'datetime_columns': 0,
+            'columns_with_nulls': 0,
+            'overall_completeness': 0.0,
+            'column_completeness': {},
+            'data_types': {},
+            'memory_usage_mb': 0.0
+        }
+        
+        # Analyze each column
+        for col in df.columns:
+            dtype = df[col].dtype
+            null_count = df[col].isna().sum()
+            completeness = ((len(df) - null_count) / len(df)) * 100 if len(df) > 0 else 0
+            
+            # Categorize data types
+            if pd.api.types.is_numeric_dtype(dtype):
+                summary['numeric_columns'] += 1
+            elif dtype.name == 'category':
+                summary['categorical_columns'] += 1
+            elif pd.api.types.is_datetime64_any_dtype(dtype):
+                summary['datetime_columns'] += 1
+            else:
+                summary['text_columns'] += 1
+            
+            # Track columns with nulls
+            if null_count > 0:
+                summary['columns_with_nulls'] += 1
+            
+            # Store column-specific info
+            summary['column_completeness'][col] = completeness
+            summary['data_types'][col] = str(dtype)
+        
+        # Calculate overall completeness
+        total_cells = len(df) * len(df.columns)
+        if total_cells > 0:
+            non_null_cells = df.count().sum()
+            summary['overall_completeness'] = (non_null_cells / total_cells) * 100
+        
+        # Calculate memory usage
+        summary['memory_usage_mb'] = df.memory_usage(deep=True).sum() / (1024 * 1024)
+        
+        logger.debug(f"Data quality summary: {summary['overall_completeness']:.1f}% complete, "
+                    f"{summary['numeric_columns']} numeric columns, "
+                    f"{summary['categorical_columns']} categorical columns")
+        
+        return summary
+        
+    except Exception as e:
+        logger.error(f"Error generating data quality summary: {str(e)}")
+        return {'error': str(e)}
+
+
+def load_and_validate_property_data(file_path: str, required_columns: Optional[List[str]] = None,
+                                   auto_convert_categorical: bool = True,
+                                   logger: Optional[logging.Logger] = None) -> Tuple[pd.DataFrame, Dict[str, Any]]:
+    """
+    Complete data loading pipeline with validation and categorical conversion.
+    
+    Args:
+        file_path: Path to Excel file
+        required_columns: List of required column names (optional)
+        auto_convert_categorical: Whether to automatically convert categorical columns
+        logger: Optional logger instance
+        
+    Returns:
+        Tuple of (validated_dataframe, pipeline_report)
+    """
+    if logger is None:
+        logger = setup_logging('complete_data_pipeline')
+    
+    pipeline_report = {
+        'loading_successful': False,
+        'validation_successful': False,
+        'conversion_report': {},
+        'validation_report': {},
+        'pipeline_warnings': [],
+        'pipeline_errors': []
+    }
+    
+    try:
+        logger.info("Starting complete data loading and validation pipeline...")
+        
+        # Step 1: Load data with categorical conversion
+        df, conversion_report = load_property_data_with_conversion(
+            file_path, auto_convert_categorical, logger
+        )
+        pipeline_report['loading_successful'] = True
+        pipeline_report['conversion_report'] = conversion_report
+        
+        # Step 2: Validate required columns if specified
+        if required_columns:
+            logger.info("Validating required columns...")
+            missing_columns = []
+            for col in required_columns:
+                if col not in df.columns:
+                    missing_columns.append(col)
+            
+            if missing_columns:
+                warning_msg = f"Missing required columns: {missing_columns}"
+                pipeline_report['pipeline_warnings'].append(warning_msg)
+                logger.warning(warning_msg)
+            else:
+                logger.info("All required columns found")
+            
+            pipeline_report['validation_report'] = {
+                'required_columns': required_columns,
+                'missing_columns': missing_columns,
+                'validation_passed': len(missing_columns) == 0
+            }
+            pipeline_report['validation_successful'] = len(missing_columns) == 0
+        else:
+            pipeline_report['validation_successful'] = True
+        
+        # Step 3: Final preprocessing
+        logger.info("Applying final preprocessing...")
+        df = preprocess_property_data(df, logger)
+        
+        logger.info("Complete data loading pipeline finished successfully")
+        return df, pipeline_report
+        
+    except Exception as e:
+        error_msg = f"Pipeline error: {str(e)}"
+        pipeline_report['pipeline_errors'].append(error_msg)
+        logger.error(error_msg)
+        raise Exception(error_msg) from e
 
 
 def validate_required_columns(df: pd.DataFrame, logger: Optional[logging.Logger] = None) -> List[str]:

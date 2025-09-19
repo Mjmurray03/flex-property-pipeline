@@ -5,6 +5,7 @@ import plotly.graph_objects as go
 from datetime import datetime
 import numpy as np
 import io
+from utils.data_type_utils import convert_categorical_to_numeric, setup_logging
 
 # Page configuration
 st.set_page_config(
@@ -356,7 +357,33 @@ def generate_filter_summary(df, filtered_df, size_range, lot_range, price_range,
     return filter_summary
 
 def generate_enhanced_csv_export(filtered_df, original_df):
-    """Generate CSV export with metadata header"""
+    """Generate CSV export with metadata header and proper data types"""
+    
+    logger = setup_logging('csv_export')
+    logger.info("Starting enhanced CSV export with data type validation")
+    
+    # Ensure proper data types before export
+    export_df = filtered_df.copy()
+    conversion_warnings = []
+    
+    try:
+        # Convert categorical columns to numeric where appropriate
+        export_df, conversion_reports = convert_categorical_to_numeric(export_df, logger=logger)
+        
+        # Track conversion warnings for metadata
+        for col, report in conversion_reports.items():
+            if report['conversion_successful']:
+                if report['values_failed'] > 0:
+                    conversion_warnings.append(f"Column '{col}': {report['values_failed']} values converted to null")
+            else:
+                conversion_warnings.append(f"Column '{col}': Conversion failed - exported as original type")
+        
+        logger.info(f"Data type validation complete: {len(conversion_reports)} columns processed")
+        
+    except Exception as e:
+        logger.error(f"Error during data type conversion for export: {str(e)}")
+        conversion_warnings.append(f"Data type conversion error: {str(e)}")
+    
     # Create metadata header
     metadata_lines = [
         "# Property Filter Dashboard Export",
@@ -376,19 +403,45 @@ def generate_enhanced_csv_export(filtered_df, original_df):
         if validation_result['warnings']:
             metadata_lines.append(f"# Warnings: {len(validation_result['warnings'])}")
     
+    # Add data type conversion information
+    if conversion_warnings:
+        metadata_lines.extend([
+            "#",
+            "# Data Type Conversions:"
+        ])
+        for warning in conversion_warnings:
+            metadata_lines.append(f"# {warning}")
+    
+    # Add column type information
+    metadata_lines.extend([
+        "#",
+        "# Column Data Types:"
+    ])
+    for col in export_df.columns:
+        dtype_str = str(export_df[col].dtype)
+        metadata_lines.append(f"# {col}: {dtype_str}")
+    
     metadata_lines.extend([
         "#",
         "# Column Definitions:",
         "# Property Name: Unique property identifier",
         "# Property Type: Type of property (Industrial, Warehouse, etc.)",
-        "# Building SqFt: Building square footage",
-        "# Lot Size Acres: Lot size in acres",
+        "# Building SqFt: Building square footage (numeric)",
+        "# Lot Size Acres: Lot size in acres (numeric)",
+        "# Sold Price: Property sale price (numeric)",
         "#",
         ""
     ])
     
-    # Convert DataFrame to CSV
-    csv_data = filtered_df.to_csv(index=False)
+    # Convert DataFrame to CSV with proper data types
+    try:
+        csv_data = export_df.to_csv(index=False)
+        logger.info("CSV export successful")
+    except Exception as e:
+        logger.error(f"Error generating CSV: {str(e)}")
+        # Fallback to original DataFrame
+        csv_data = filtered_df.to_csv(index=False)
+        metadata_lines.append(f"# Export Warning: Used original data types due to conversion error: {str(e)}")
     
     # Combine metadata and data
     full_csv = "\n".join(metadata_lines) + csv_data
@@ -396,71 +449,151 @@ def generate_enhanced_csv_export(filtered_df, original_df):
     return full_csv
 
 def generate_enhanced_excel_export(filtered_df, original_df):
-    """Generate Excel export with metadata sheet"""
+    """Generate Excel export with metadata sheet and proper data types"""
+    
+    logger = setup_logging('excel_export')
+    logger.info("Starting enhanced Excel export with data type validation")
+    
     buffer = io.BytesIO()
     
-    with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-        # Write filtered data to main sheet
-        filtered_df.to_excel(writer, sheet_name='Filtered Properties', index=False)
+    # Ensure proper data types before export
+    export_df = filtered_df.copy()
+    conversion_reports = {}
+    
+    try:
+        # Convert categorical columns to numeric where appropriate
+        export_df, conversion_reports = convert_categorical_to_numeric(export_df, logger=logger)
+        logger.info(f"Data type validation complete: {len(conversion_reports)} columns processed")
         
-        # Create metadata sheet
-        metadata_data = {
-            'Metric': [
-                'Export Generated',
-                'Original Data Source',
-                'Upload Date',
-                'Processing Time',
-                'Original Records',
-                'Filtered Records',
-                'Filter Pass Rate',
-                'Data Quality Score',
-                'Memory Usage',
-                'Columns Cleaned'
-            ],
-            'Value': [
-                datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                st.session_state.get('uploaded_filename', 'Unknown'),
-                st.session_state.get('upload_timestamp', datetime.now()).strftime('%Y-%m-%d %H:%M:%S') if st.session_state.get('upload_timestamp') else 'Unknown',
-                f"{st.session_state.get('processing_time', 0):.2f} seconds",
-                f"{len(original_df):,}",
-                f"{len(filtered_df):,}",
-                f"{len(filtered_df)/len(original_df)*100:.1f}%",
-                f"{st.session_state.get('validation_result', {}).get('data_quality_score', 0):.0f}/100",
-                f"{st.session_state.get('processing_report', {}).get('memory_usage', 0):.1f} MB",
-                len(st.session_state.get('processing_report', {}).get('columns_cleaned', []))
-            ]
-        }
-        
-        metadata_df = pd.DataFrame(metadata_data)
-        metadata_df.to_excel(writer, sheet_name='Export Metadata', index=False)
-        
-        # Add processing report if available
-        if st.session_state.get('processing_report'):
-            processing_report = st.session_state['processing_report']
+    except Exception as e:
+        logger.error(f"Error during data type conversion for export: {str(e)}")
+        # Use original DataFrame if conversion fails
+        export_df = filtered_df.copy()
+    
+    try:
+        with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+            # Write filtered data to main sheet with proper data types
+            export_df.to_excel(writer, sheet_name='Filtered Properties', index=False)
             
-            # Create processing details sheet
-            processing_data = []
+            # Create metadata sheet
+            metadata_data = {
+                'Metric': [
+                    'Export Generated',
+                    'Original Data Source',
+                    'Upload Date',
+                    'Processing Time',
+                    'Original Records',
+                    'Filtered Records',
+                    'Filter Pass Rate',
+                    'Data Quality Score',
+                    'Memory Usage',
+                    'Columns Cleaned',
+                    'Data Type Conversions'
+                ],
+                'Value': [
+                    datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                    st.session_state.get('uploaded_filename', 'Unknown'),
+                    st.session_state.get('upload_timestamp', datetime.now()).strftime('%Y-%m-%d %H:%M:%S') if st.session_state.get('upload_timestamp') else 'Unknown',
+                    f"{st.session_state.get('processing_time', 0):.2f} seconds",
+                    f"{len(original_df):,}",
+                    f"{len(filtered_df):,}",
+                    f"{len(filtered_df)/len(original_df)*100:.1f}%",
+                    f"{st.session_state.get('validation_result', {}).get('data_quality_score', 0):.0f}/100",
+                    f"{st.session_state.get('processing_report', {}).get('memory_usage', 0):.1f} MB",
+                    len(st.session_state.get('processing_report', {}).get('columns_cleaned', [])),
+                    len(conversion_reports)
+                ]
+            }
             
-            if processing_report.get('cleaning_stats'):
-                for col, actions in processing_report['cleaning_stats'].items():
-                    for action in actions:
+            metadata_df = pd.DataFrame(metadata_data)
+            metadata_df.to_excel(writer, sheet_name='Export Metadata', index=False)
+            
+            # Create data type information sheet
+            if conversion_reports:
+                dtype_data = []
+                for col, report in conversion_reports.items():
+                    dtype_data.append({
+                        'Column': col,
+                        'Original Type': report['original_dtype'],
+                        'Final Type': report['target_dtype'],
+                        'Conversion Success': 'Yes' if report['conversion_successful'] else 'No',
+                        'Values Converted': report['values_converted'],
+                        'Values Failed': report['values_failed'],
+                        'Conversion Method': report['conversion_method'],
+                        'Warnings': '; '.join(report['warnings']) if report['warnings'] else 'None'
+                    })
+                
+                if dtype_data:
+                    dtype_df = pd.DataFrame(dtype_data)
+                    dtype_df.to_excel(writer, sheet_name='Data Type Conversions', index=False)
+            
+            # Add column data types sheet
+            column_types_data = []
+            for col in export_df.columns:
+                column_types_data.append({
+                    'Column': col,
+                    'Data Type': str(export_df[col].dtype),
+                    'Non-Null Count': export_df[col].count(),
+                    'Null Count': export_df[col].isna().sum(),
+                    'Sample Values': str(export_df[col].dropna().head(3).tolist()) if export_df[col].notna().any() else 'No data'
+                })
+            
+            column_types_df = pd.DataFrame(column_types_data)
+            column_types_df.to_excel(writer, sheet_name='Column Information', index=False)
+            
+            # Add processing report if available
+            if st.session_state.get('processing_report'):
+                processing_report = st.session_state['processing_report']
+                
+                # Create processing details sheet
+                processing_data = []
+                
+                if processing_report.get('cleaning_stats'):
+                    for col, actions in processing_report['cleaning_stats'].items():
+                        for action in actions:
+                            processing_data.append({
+                                'Column': col,
+                                'Action': action,
+                                'Type': 'Data Cleaning'
+                            })
+                
+                if processing_report.get('outliers_detected'):
+                    for col, count in processing_report['outliers_detected'].items():
                         processing_data.append({
                             'Column': col,
-                            'Action': action,
-                            'Type': 'Data Cleaning'
+                            'Action': f'{count} outliers detected',
+                            'Type': 'Quality Check'
                         })
+                
+                # Add data type conversion actions
+                for col, report in conversion_reports.items():
+                    if report['conversion_successful']:
+                        processing_data.append({
+                            'Column': col,
+                            'Action': f"Converted from {report['original_dtype']} to {report['target_dtype']}",
+                            'Type': 'Data Type Conversion'
+                        })
+                
+                if processing_data:
+                    processing_df = pd.DataFrame(processing_data)
+                    processing_df.to_excel(writer, sheet_name='Processing Details', index=False)
+        
+        logger.info("Excel export successful")
+        
+    except Exception as e:
+        logger.error(f"Error generating Excel export: {str(e)}")
+        # Fallback: create simple export with original data
+        buffer = io.BytesIO()
+        with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+            filtered_df.to_excel(writer, sheet_name='Filtered Properties', index=False)
             
-            if processing_report.get('outliers_detected'):
-                for col, count in processing_report['outliers_detected'].items():
-                    processing_data.append({
-                        'Column': col,
-                        'Action': f'{count} outliers detected',
-                        'Type': 'Quality Check'
-                    })
-            
-            if processing_data:
-                processing_df = pd.DataFrame(processing_data)
-                processing_df.to_excel(writer, sheet_name='Processing Details', index=False)
+            # Add error information
+            error_df = pd.DataFrame({
+                'Export Error': [str(e)],
+                'Timestamp': [datetime.now().strftime('%Y-%m-%d %H:%M:%S')],
+                'Note': ['Export completed with original data types due to conversion error']
+            })
+            error_df.to_excel(writer, sheet_name='Export Warnings', index=False)
     
     return buffer
 
@@ -1605,10 +1738,10 @@ def apply_filters(df, filter_params):
         # Building size filter
         if 'size_range' in filter_params and 'Building SqFt' in filtered_df.columns:
             try:
-                size_mask = (
-                    (filtered_df['Building SqFt'] >= filter_params['size_range'][0]) & 
-                    (filtered_df['Building SqFt'] <= filter_params['size_range'][1])
-                )
+                from utils.data_type_utils import safe_numerical_comparison
+                size_min_mask = safe_numerical_comparison(filtered_df['Building SqFt'], '>=', filter_params['size_range'][0], 'Building SqFt')
+                size_max_mask = safe_numerical_comparison(filtered_df['Building SqFt'], '<=', filter_params['size_range'][1], 'Building SqFt')
+                size_mask = size_min_mask & size_max_mask
                 filtered_df = filtered_df[size_mask]
             except Exception as e:
                 st.warning(f"Error applying building size filter: {str(e)}")
@@ -1616,10 +1749,9 @@ def apply_filters(df, filter_params):
         # Lot size filter
         if 'lot_range' in filter_params and 'Lot Size Acres' in filtered_df.columns:
             try:
-                lot_mask = (
-                    (filtered_df['Lot Size Acres'] >= filter_params['lot_range'][0]) & 
-                    (filtered_df['Lot Size Acres'] <= filter_params['lot_range'][1])
-                )
+                lot_min_mask = safe_numerical_comparison(filtered_df['Lot Size Acres'], '>=', filter_params['lot_range'][0], 'Lot Size Acres')
+                lot_max_mask = safe_numerical_comparison(filtered_df['Lot Size Acres'], '<=', filter_params['lot_range'][1], 'Lot Size Acres')
+                lot_mask = lot_min_mask & lot_max_mask
                 filtered_df = filtered_df[lot_mask]
             except Exception as e:
                 st.warning(f"Error applying lot size filter: {str(e)}")
@@ -1628,10 +1760,10 @@ def apply_filters(df, filter_params):
         if filter_params.get('use_price_filter') and 'price_range' in filter_params:
             if 'Sold Price' in filtered_df.columns:
                 try:
-                    price_mask = (
-                        (filtered_df['Sold Price'] >= filter_params['price_range'][0]) & 
-                        (filtered_df['Sold Price'] <= filter_params['price_range'][1])
-                    )
+                    from utils.data_type_utils import safe_numerical_comparison
+                    price_min_mask = safe_numerical_comparison(filtered_df['Sold Price'], '>=', filter_params['price_range'][0], 'Sold Price')
+                    price_max_mask = safe_numerical_comparison(filtered_df['Sold Price'], '<=', filter_params['price_range'][1], 'Sold Price')
+                    price_mask = price_min_mask & price_max_mask
                     filtered_df = filtered_df[price_mask]
                 except Exception as e:
                     st.warning(f"Error applying price filter: {str(e)}")
@@ -1640,10 +1772,9 @@ def apply_filters(df, filter_params):
         if filter_params.get('use_year_filter') and 'year_range' in filter_params:
             if 'Year Built' in filtered_df.columns:
                 try:
-                    year_mask = (
-                        (filtered_df['Year Built'] >= filter_params['year_range'][0]) & 
-                        (filtered_df['Year Built'] <= filter_params['year_range'][1])
-                    )
+                    year_min_mask = safe_numerical_comparison(filtered_df['Year Built'], '>=', filter_params['year_range'][0], 'Year Built')
+                    year_max_mask = safe_numerical_comparison(filtered_df['Year Built'], '<=', filter_params['year_range'][1], 'Year Built')
+                    year_mask = year_min_mask & year_max_mask
                     filtered_df = filtered_df[year_mask]
                 except Exception as e:
                     st.warning(f"Error applying year built filter: {str(e)}")
@@ -1652,10 +1783,9 @@ def apply_filters(df, filter_params):
         if filter_params.get('use_occupancy_filter') and 'occupancy_range' in filter_params:
             if 'Occupancy' in filtered_df.columns:
                 try:
-                    occupancy_mask = (
-                        (filtered_df['Occupancy'] >= filter_params['occupancy_range'][0]) & 
-                        (filtered_df['Occupancy'] <= filter_params['occupancy_range'][1])
-                    )
+                    occupancy_min_mask = safe_numerical_comparison(filtered_df['Occupancy'], '>=', filter_params['occupancy_range'][0], 'Occupancy')
+                    occupancy_max_mask = safe_numerical_comparison(filtered_df['Occupancy'], '<=', filter_params['occupancy_range'][1], 'Occupancy')
+                    occupancy_mask = occupancy_min_mask & occupancy_max_mask
                     filtered_df = filtered_df[occupancy_mask]
                 except Exception as e:
                     st.warning(f"Error applying occupancy filter: {str(e)}")
@@ -1720,6 +1850,19 @@ def main():
     if df is None or df.empty:
         st.info("Please upload a file or load the default data to continue.")
         return
+    
+    # Convert categorical data to numeric to prevent runtime errors
+    try:
+        from utils.data_type_utils import convert_categorical_to_numeric
+        df, conversion_reports = convert_categorical_to_numeric(df)
+        
+        # Show conversion info if any conversions were made
+        if conversion_reports:
+            converted_cols = [col for col, report in conversion_reports.items() if report['conversion_successful']]
+            if converted_cols:
+                st.info(f"✓ Converted {len(converted_cols)} categorical columns to numeric: {', '.join(converted_cols)}")
+    except Exception as e:
+        st.warning(f"Note: Some data type conversions may not be optimal: {str(e)}")
     
     # Handle transition from upload to filtering
     if st.session_state.get('show_filters', False):
@@ -1827,7 +1970,8 @@ def main():
             st.metric("Industrial Properties", "N/A")
     with col3:
         if 'Building SqFt' in df.columns:
-            avg_sqft = df['Building SqFt'].mean()
+            from utils.data_type_utils import safe_mean_calculation
+            avg_sqft = safe_mean_calculation(df['Building SqFt'], 'Building SqFt')
             if not pd.isna(avg_sqft):
                 st.metric("Avg Building Size", f"{avg_sqft:,.0f} sqft")
             else:
@@ -2048,14 +2192,15 @@ def main():
                 delta=delta_text
             )
         with col2:
-            avg_filtered_sqft = filtered_df['Building SqFt'].mean()
+            from utils.data_type_utils import safe_mean_calculation
+            avg_filtered_sqft = safe_mean_calculation(filtered_df['Building SqFt'], 'Building SqFt')
             if not pd.isna(avg_filtered_sqft):
                 st.metric("Avg Filtered Size", f"{avg_filtered_sqft:,.0f} sqft")
             else:
                 st.metric("Avg Filtered Size", "N/A")
         with col3:
             if 'Sold Price' in filtered_df.columns:
-                avg_price = filtered_df['Sold Price'].mean()
+                avg_price = safe_mean_calculation(filtered_df['Sold Price'], 'Sold Price')
                 if not pd.isna(avg_price):
                     st.metric("Avg Sale Price", f"${avg_price:,.0f}")
                 else:
