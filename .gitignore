@@ -5,3 +5,10 @@ data/raw/
 *.log
 __pycache__/
 .env
+
+# Large data files
+data/raw/gis_parcels_*.json
+data/raw/*.json
+*.json.gz
+# Files over 10MB
+data/exports/test_results.xlsx
