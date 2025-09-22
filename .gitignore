@@ -1,6 +1,7 @@
 # Large files and directories
 venv/
 data/raw/
+data/raw/**
 *.TXT
 *.log
 __pycache__/
